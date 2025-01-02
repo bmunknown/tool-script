@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Check if PostgreSQL is installed
+# Kiểm tra xem PostgreSQL có được cài đặt hay không
 if ! command -v pg_dump &> /dev/null
 then
     echo "PostgreSQL is not installed. Please install PostgreSQL before continuing."
     exit 1
 fi
 
-# Prompt for PostgreSQL connection information
+# Prompt cho thông tin kết nối PostgreSQL
 echo "Enter PostgreSQL host (default is localhost):"
 read PG_HOST
 PG_HOST=${PG_HOST:-localhost}
@@ -22,7 +22,7 @@ read PG_USER
 echo "Enter PostgreSQL password:"
 read -s PG_PASS
 
-# Check PostgreSQL connection (test login)
+# Kiểm tra kết nối với PostgreSQL
 export PGPASSWORD=$PG_PASS
 pg_isready -h $PG_HOST -p $PG_PORT -U $PG_USER > /dev/null 2>&1
 if [ $? -ne 0 ]; then
@@ -30,68 +30,82 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Prompt for backup storage directory (default is /backup/postgres/$(date +%Y-%m-%d)/)
-echo "Enter backup storage directory (default is /backup/postgres/$(date +%Y-%m-%d)/):"
+# Prompt cho đường dẫn lưu trữ backup
+echo "Enter the backup directory (default is /backup/postgres/):"
 read BACKUP_DIR
-BACKUP_DIR=${BACKUP_DIR:-/backup/postgres/$(date +%Y-%m-%d)}
+BACKUP_DIR=${BACKUP_DIR:-/backup/postgres/}
 
-# Create backup directory if it doesn't exist
+# Tạo thư mục backup nếu không tồn tại
 mkdir -p "$BACKUP_DIR"
 
-# Prompt for backup type
-echo "Select backup type:"
+# Lựa chọn backup all databases hay 1 database cụ thể
+echo "Choose backup option:"
 echo "1. Backup all databases"
-echo "2. Backup a specific database"
-read -p "Enter your choice (1 or 2): " OPTION
+echo "2. Backup a single database"
+read -p "Enter option (1 or 2): " BACKUP_OPTION
 
-if [ "$OPTION" -eq 1 ]; then
-    BACKUP_FILE="$BACKUP_DIR/database_all.sql"
+# Đặt tên file backup theo thời gian hiện tại
+DATE=$(date +%Y-%m-%d_%H-%M-%S)
 
-    echo "Performing backup of all databases..."
-    pg_dumpall -h $PG_HOST -p $PG_PORT -U $PG_USER > "$BACKUP_FILE"
-
-    if [ $? -eq 0 ]; then
-        echo "Backup of all databases completed successfully. Backup file saved at: $BACKUP_FILE"
-    else
-        echo "An error occurred while performing the backup."
-        exit 1
-    fi
-
-elif [ "$OPTION" -eq 2 ]; then
+if [ "$BACKUP_OPTION" -eq 1 ]; then
+    BACKUP_FILE="$BACKUP_DIR/${DATE}_database_all.sql"
+    echo "Backing up all databases to $BACKUP_FILE"
+    pg_dumpall -h $PG_HOST -p $PG_PORT -U $PG_USER -f "$BACKUP_FILE"
+else
     echo "Enter the name of the database to backup:"
     read DB_NAME
-
-    BACKUP_FILE="$BACKUP_DIR/$DB_NAME.sql"
-
-    echo "Performing backup of database $DB_NAME..."
-    pg_dump -h $PG_HOST -p $PG_PORT -U $PG_USER $DB_NAME > "$BACKUP_FILE"
-
-    if [ $? -eq 0 ]; then
-        echo "Backup of database $DB_NAME completed successfully. Backup file saved at: $BACKUP_FILE"
-    else
-        echo "An error occurred while performing the backup."
-        exit 1
-    fi
-
-else
-    echo "Invalid choice. Please choose 1 or 2."
-    exit 1
+    BACKUP_FILE="$BACKUP_DIR/${DATE}_$DB_NAME.sql"
+    echo "Backing up database $DB_NAME to $BACKUP_FILE"
+    pg_dump -h $PG_HOST -p $PG_PORT -U $PG_USER -d $DB_NAME -f "$BACKUP_FILE"
 fi
 
-# Ask if the user wants to add any additional options (like oplog)
-echo "Do you want to add any additional options? (Enter numbers separated by space or press Enter to skip)"
+# Prompt thêm các lựa chọn tuỳ chọn khi backup
+echo "Would you like to include additional options for the backup?"
 echo "1. Include oplog"
 echo "2. Compress backup"
 echo "3. Include schema"
 echo "4. Exclude certain tables"
-read -p "Enter your choices (e.g., 1 3 or just press Enter): " ADDITIONAL_OPTIONS
+echo "5. Customize options (advanced)"
+echo "0. No additional options"
+read -p "Enter option (0-5): " ADDITIONAL_OPTION
 
-# If any option is selected, display them
-if [ ! -z "$ADDITIONAL_OPTIONS" ]; then
-    echo "You selected the following options: $ADDITIONAL_OPTIONS"
-    # Add code here to handle each option as needed.
-    # Example: if the user selects option 1, include oplog; if 2, compress the backup, etc.
-    # You can modify the backup commands (pg_dump, pg_dumpall) based on these options.
-else
-    echo "No additional options selected."
-fi
+# Xử lý các lựa chọn bổ sung
+case $ADDITIONAL_OPTION in
+    1)
+        echo "Including oplog in backup..."
+        # Add logic to include oplog (specific to your PostgreSQL setup)
+        ;;
+    2)
+        echo "Compressing the backup..."
+        gzip "$BACKUP_FILE"
+        BACKUP_FILE="$BACKUP_FILE.gz"
+        echo "Backup compressed: $BACKUP_FILE"
+        ;;
+    3)
+        echo "Including schema in backup..."
+        pg_dump -h $PG_HOST -p $PG_PORT -U $PG_USER --no-password --no-owner --no-comments --no-privileges --create --schema-only -d "$DB_NAME" -f "$BACKUP_FILE"
+        ;;
+    4)
+        echo "Enter the tables to exclude (comma-separated):"
+        read EXCLUDE_TABLES
+        for TABLE in $(echo $EXCLUDE_TABLES | tr "," "\n"); do
+            echo "Excluding table $TABLE..."
+            pg_dump -h $PG_HOST -p $PG_PORT -U $PG_USER -d $DB_NAME --no-password --no-owner --no-comments --no-privileges -T $TABLE -f "$BACKUP_FILE"
+        done
+        ;;
+    5)
+        echo "Enter custom options (e.g., --no-comments, --no-owner, etc.):"
+        read CUSTOM_OPTIONS
+        echo "Executing pg_dump with custom options: $CUSTOM_OPTIONS"
+        pg_dump -h $PG_HOST -p $PG_PORT -U $PG_USER $CUSTOM_OPTIONS -d "$DB_NAME" -f "$BACKUP_FILE"
+        ;;
+    0)
+        echo "No additional options selected."
+        ;;
+    *)
+        echo "Invalid option selected."
+        exit 1
+        ;;
+esac
+
+echo "Backup completed: $BACKUP_FILE"
