@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Backup directory where the backup files are stored
-BACKUP_DIR="/path/to/backup/dir/volume-backup"
+BACKUP_DIR="volumes-backup"
 
 # Loop through each backup file in the volume-backup directory
 for BACKUP_FILE in $BACKUP_DIR/*.tar.gz; do
