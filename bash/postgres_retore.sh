@@ -34,7 +34,7 @@ fi
 echo "Enter the backup file path to restore:"
 read BACKUP_FILE
 
-# Check if backup file exists
+# Check if the backup file exists
 if [ ! -f "$BACKUP_FILE" ]; then
     echo "Backup file does not exist. Please check the file path."
     exit 1
